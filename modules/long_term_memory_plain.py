@@ -110,11 +110,11 @@ class NetworkManager:
         if len(self.goal_coord_list) == 0:
             direction_info += f"You don't have any goal inference."
         if len(self.goal_coord_list) == 1:
-            direction_info += f"Last time you inferred the goal was at {self.goal_coord_list[0]}."
+            direction_info += f"Last time you inferred the goal was at {self.goal_coord_list[0]}. "
         if len(self.goal_coord_list) == 2:
-            direction_info += f"The first time you inferred the goal was at {self.goal_coord_list[0]}. The second time you inferred the goal was at {self.goal_coord_list[1]}."
+            direction_info += f"The first time you inferred the goal was at {self.goal_coord_list[0]}. The second time you inferred the goal was at {self.goal_coord_list[1]}. "
         if len(self.goal_coord_list) == 3:
-            direction_info += f"The first time you inferred the goal was at {self.goal_coord_list[0]}. The second time you inferred the goal was at {self.goal_coord_list[1]}. The third time you inferred the goal was at {self.goal_coord_list[2]}."
+            direction_info += f"The first time you inferred the goal was at {self.goal_coord_list[0]}. The second time you inferred the goal was at {self.goal_coord_list[1]}. The third time you inferred the goal was at {self.goal_coord_list[2]}. "
 
         if len(self.trajectory_list) >= 5:
             trace_info = self.llm_interface(self.trajectory_list)
@@ -129,7 +129,7 @@ class NetworkManager:
         act = self.trajectory_list[index].action
         n_coord = self.trajectory_list[index].next_coord
 
-        description = f"You were at {coord}. You could move to {connect} from here. You chose to move to {act}. You then arrived at {n_coord}.\n"
+        description = f"You were at {coord}. You could move to {connect} from there. You chose to move to {act}. You then arrived at {n_coord}.\n"
 
         return description
 

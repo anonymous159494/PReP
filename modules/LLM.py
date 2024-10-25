@@ -15,15 +15,15 @@ from retrying import retry
 import openai
 
 
-openai_api_key = "sk-xxxxxxxxxxxxxxxxxxx"  # openai api key
+openai_api_key = ""  # openai api key
 
 others_api_key = "xxxxxxxxxxxxxxxxxxxxxx"  # other LLM api key, e.g. zhipu GLM
 
 openai_organization = None
 
 openai_proxy = {
-    'http':"http://127.0.0.1:10809",
-    'https':"http://127.0.0.1:10809",
+    'http':"http://127.0.0.1:7890",
+    'https':"http://127.0.0.1:7890",
     }
 
 openai_model = "gpt-3.5-turbo"
