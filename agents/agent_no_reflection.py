@@ -13,6 +13,8 @@ from global_function import cal_angle2, cal_distance
 
 from dataset.bj_lm_recog import get_res_bj
 from dataset.sh_lm_recog import get_res_sh
+from dataset.pr_lm_recog import get_res_pr
+from dataset.ny_lm_recog import get_res_ny
 
 
 class Agent_PReP_NoReflection:
@@ -94,8 +96,16 @@ class Agent_PReP_NoReflection:
             lm_recog = get_res_bj()
             if self.location.id in lm_recog.keys():
                 lm_list = lm_recog[self.location.id]
-        else:
+        if "shanghai" in self.log_filepath:
             lm_recog = get_res_sh()
+            if self.location.id in lm_recog.keys():
+                lm_list = lm_recog[self.location.id]
+        if "paris" in self.log_filepath:
+            lm_recog = get_res_pr()
+            if self.location.id in lm_recog.keys():
+                lm_list = lm_recog[self.location.id]
+        if "newyork" in self.log_filepath:
+            lm_recog = get_res_ny()
             if self.location.id in lm_recog.keys():
                 lm_list = lm_recog[self.location.id]
 
@@ -131,7 +141,7 @@ class Agent_PReP_NoReflection:
                         if mode == "without_finetune":
                             predict_distance = int(response2.split(' meters')[0].split(' ')[-1])
                         else:
-                            predict_distance = int(response2.split('about ')[1].split(' ')[0])
+                            predict_distance = int(float(response2.split('about ')[1].split(' ')[0]))
                         print(predict_distance)
 
                         real_angle = cal_angle2(self.location.bdxy, lm['bdxy'])
@@ -256,25 +266,25 @@ class Agent_PReP_NoReflection:
             return f"North {a} steps, West {a} steps"
 
     def route_planning(self):
-        map_info = self.retrieved['connection_info']
-        trace_info = self.retrieved['trace_info']
-
-        ant_ref = self.retrieved['direction_info']
-        if "You don't have any goal inference." in ant_ref:
-            current_info = f"You don't have any goal inference and should explore and gather more information. "
-        else:
-            current_info = ant_ref
+        connection_info = self.retrieved['connection_info']
 
         plan_info = f"The plan is {self.plan}. "
 
-        instruct = f"Where are you currently in the plan? According to all information above, should the plan be updated?. If yes, show the new plan. According to your plan and current connection, choose one in {list(self.action_space.keys())} as your next action. Answer in the json format, and keys are ['current_state', 'yes_or_no', 'update_reason'(if has), 'new_plan'(if has), 'action_reason', 'action']. "
+        instruct = f"Which step of the plan are you currently implementing? According to all information above, should the plan be updated? If yes, show the new plan. According to your plan and current connection, choose one in {list(self.action_space.keys())} as your next action."
 
-        system_prompt = "You are a helpful navigation agent in the city. And you should follow these instructions: \n(1) The plan should indicates the direction without any specific nodes. \n(2) The plan should be a 3 steps list, e.g. When the goal is in the East direction and you are in a South-North lane, the plan should be [1. Move North until an intersection(because you can't directly move East); 2. From that intersection, move East if possible(because the goal is in the East); 3. Move South to search the goal.(because you first move North which deviates from the goal in y-coordinate)]\n" + f"(3) Note that the action must be one of the {list(self.action_space.keys())}. Try not to move back unless necessary.\n(4)If your trajectory memory indicates you are wandering between two directions, you should move along a certain direction to break the loop.\n(5)Even if you have arrived at your inferred goal coordinates, you haven't found the goal yet, so you should search among unvisited areas nearby."
+        system_prompt = "You are a helpful navigation agent in the city. And you should follow these instructions:\n(" \
+                        "1)Locations (including the goal) in the city are represented by coordinates. Take (0," \
+                        "0) as origin, (0,+1) as one step North, (+1,0) as one step East.\n(2)You should follow a step-by-step plan to " \
+                        "find your goal. Plan should indicates the direction without any specific nodes.\n(3)Format " \
+                        "Example of the plan when the goal is in the East and you are in a South-North lane: 1.Move " \
+                        "North until an intersection(because you can't directly move East); 2.From that intersection, " \
+                        "move East if possible(because the goal is in the East); 3.Move South to search the goal.(" \
+                        "because you first move North which deviates from the goal in y-coordinate)\n" + f"(4)You should think step by step to answer a series of questions. Answer in the json format, and keys are ['current_step', 'yes_or_no', 'update_reason'(if has), 'new_plan'(if has), 'action_reason', 'action']. Note that the 'action' must be one of {list(self.action_space.keys())}. Try not to move back unless necessary.\n(5)Even if you have arrived at your inferred goal coordinates, you haven't found the goal yet, so you should search among unvisited areas nearby."
 
-        if trace_info is None:
-            user_prompt = f"{current_info}{map_info}{plan_info}{instruct}"
+        if self.face_direction is not None:
+            user_prompt = f"{connection_info}Now you infer that the goal is in {self.dire_dis_transfer(self.face_direction, self.distance)}. {plan_info}{instruct}"
         else:
-            user_prompt = f"{current_info}{map_info}{trace_info}{plan_info}{instruct}"
+            user_prompt = f"{connection_info}{plan_info}{instruct}"
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -303,37 +313,6 @@ class Agent_PReP_NoReflection:
             self.action = self.extract_direction(answer['action'], list(self.action_space.keys()))
         except:
             self.action = None
-
-        pass
-
-    def decision_making(self):
-        map_info = self.retrieved['connection_info']
-        plan_info = f"The plan is {self.plan}. "
-
-        instruct = "According to the plan and current connection, decide the next action. Answer in the json format, and keys are ['thought', 'action']."
-
-        user_prompt = f"{plan_info}{map_info}{instruct}"
-
-        system_prompt = f"The action direction should be one of {list(self.action_space.keys())}"
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-
-        response, token_cost = chatgpt_request(messages, temperature=0.8)
-        self.token_counts = self.token_counts + token_cost
-        if "```json" in response:
-            response = response.split('```')[1][4:]
-
-        print(messages, response)
-        try:
-            answer = json.loads(response)
-            self.action = self.extract_direction(answer['action'], list(self.action_space.keys()))
-            pass
-        except Exception as e:
-            print(e)
-            pass
 
         pass
 

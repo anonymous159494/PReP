@@ -6,13 +6,15 @@ import random
 from dataset.landmark import landmark
 from modules.LLM import *
 from modules.Dataset import Location
-from modules.long_term_memory import NetworkManager
+from modules.long_term_memory_plain import NetworkManager
 from global_function import angle2dir, ang2vec, vec2ang
 from global_function import get_realangle, angle_average
 from global_function import cal_angle2, cal_distance
 
 from dataset.bj_lm_recog import get_res_bj
 from dataset.sh_lm_recog import get_res_sh
+from dataset.pr_lm_recog import get_res_pr
+from dataset.ny_lm_recog import get_res_ny
 
 
 class Agent_ProgPrompt:
@@ -94,8 +96,16 @@ class Agent_ProgPrompt:
             lm_recog = get_res_bj()
             if self.location.id in lm_recog.keys():
                 lm_list = lm_recog[self.location.id]
-        else:
+        if "shanghai" in self.log_filepath:
             lm_recog = get_res_sh()
+            if self.location.id in lm_recog.keys():
+                lm_list = lm_recog[self.location.id]
+        if "paris" in self.log_filepath:
+            lm_recog = get_res_pr()
+            if self.location.id in lm_recog.keys():
+                lm_list = lm_recog[self.location.id]
+        if "newyork" in self.log_filepath:
+            lm_recog = get_res_ny()
             if self.location.id in lm_recog.keys():
                 lm_list = lm_recog[self.location.id]
 
@@ -123,7 +133,7 @@ class Agent_ProgPrompt:
                         if mode == "without_finetune":
                             text2 = f"""The {lm['en']} is visible in the image and its voc bounding box is {voc}. How far is that place actually from the camera?"""
                         else:
-                            text2 = f"""The {lm['en']} is visible in the image and its voc bounding box is ({voc}). How far is that place actually from the camera? """
+                            text2 = f"""The {lm['en']} is visible in the image and its bounding box is ({voc}). How far is that place away from the camera?"""
                         response2 = llava_predict_local(img, text2, port=5000, path_only=True)
 
                         heading = self.location.connect[i][1]
@@ -131,7 +141,7 @@ class Agent_ProgPrompt:
                         if mode == "without_finetune":
                             predict_distance = int(response2.split(' meters')[0].split(' ')[-1])
                         else:
-                            predict_distance = int(response2.split('about ')[1].split(' ')[0])
+                            predict_distance = int(float(response2.split('about ')[1].split(' ')[0]))
                         print(predict_distance)
 
                         real_angle = cal_angle2(self.location.bdxy, lm['bdxy'])
@@ -255,30 +265,31 @@ class Agent_ProgPrompt:
             return f"North {a} steps, West {a} steps"
 
     def route_planning(self):
-        map_info = self.retrieved['connection_info']
-        trace_info = self.retrieved['trace_info']
-        current_info = self.retrieved['direction_info']
+        connection_info = self.retrieved['connection_info']
 
         plan_info = f"The plan is:\n{self.plan}\n"
 
-        instruct = f"According to all information above, should the plan be updated?. If yes, show the new plan. According to your plan and current connection, choose one in {list(self.action_space.keys())} as your next action. Answer in the json format, and keys are ['yes_or_no', 'new_plan'(if has), 'action']."
+        instruct = f"According to all information above, should the plan be updated? If yes, show the new plan. According to your plan and current connection, choose one in {list(self.action_space.keys())} as your next action."
 
-        system_prompt = "from functions import walk(dire)\ndire=['North', 'East', 'South', 'West', 'Northwest', " \
-                        "'Northeast', 'Southwest', 'Southeast']\nYou are a helpful navigate agent in the city. The " \
+        system_prompt = "You are a helpful navigate agent in the city. And you should follow these instructions:\n(" \
+                        "1)Locations (including the goal) in the city are represented by coordinates. Take (0," \
+                        "0) as origin, (0,+1) as one step North, (+1,0) as one step East.\n(2)You should follow a step-by-step plan to " \
+                        "find your goal. You should use code rather than natural language to " \
+                        "express your plan. Do not use any control flow statement other than 'assert-else'.\n(3)import walk\ndire=['North', 'East', 'South', 'West', 'Northwest', " \
+                        "'Northeast', 'Southwest', 'Southeast']\nThe " \
                         "Format Example of the plan when the goal is in the East and you are in a South-North " \
-                        "lane:\ndef search_goal():\n    # 1: Move North because you can't directly move East\n    " \
-                        "walk('North')\n    # 2: If you are at an intersection, you should move East because the goal " \
-                        "is in the East\n    assert('at intersection')\n        else: walk('North')\n    walk(" \
-                        "'East')\n    # 3: If you are at an intersection again, you should move South because you " \
-                        "first move North which deviates from the goal in y-coordinate\n    assert('at " \
+                        "lane:\ndef search_goal():\n    # step 1: Move North\n    " \
+                        "walk('North')\n    # step 2: If you are at an intersection, you should move East\n    assert('at " \
+                        "intersection')\n        else: walk('North')\n    walk(" \
+                        "'East')\n    # step 3: If you are at an intersection again, you should move South\n    assert('at " \
                         "intersection')\n        else: walk('East')\n    walk('South')\n" \
-                        "You should follow these instructions:\n(1)All functions in your plan must be walk(dire), " \
-                        "where dire must be one of the dire list.\n" + f"(2)If assert is False, you should choose the direction in else if it is in {list(self.action_space.keys())}."
+                        "(4)All functions in your plan must be walk(dire), " \
+                        "where dire must be one of the dire list.\n" + f"(5)If assert is False, you should choose the direction in else.\n(6)You should answer a series of questions. Answer in the json format, and keys are ['yes_or_no', 'new_plan'(if has), 'action']. Note that the 'action' must be one of {list(self.action_space.keys())}. Try not to move back unless necessary.\n(7)Even if you have arrived at your inferred goal coordinates, you haven't found the goal yet, so you should search among unvisited areas nearby."
 
-        if trace_info is None:
-            user_prompt = f"{current_info}{map_info}{plan_info}{instruct}"
+        if self.face_direction is not None:
+            user_prompt = f"{connection_info}Now you infer that the goal is in {self.dire_dis_transfer(self.face_direction, self.distance)}. {plan_info}{instruct}"
         else:
-            user_prompt = f"{current_info}{map_info}{trace_info}{plan_info}{instruct}"
+            user_prompt = f"{connection_info}{plan_info}{instruct}"
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -307,37 +318,6 @@ class Agent_ProgPrompt:
             self.action = self.extract_direction(answer['action'], list(self.action_space.keys()))
         except:
             self.action = None
-
-        pass
-
-    def decision_making(self):
-        map_info = self.retrieved['connection_info']
-        plan_info = f"The plan is {self.plan}. "
-
-        instruct = "According to the plan and current connection, decide the next action. Answer in the json format, and keys are ['thought', 'action']."
-
-        user_prompt = f"{plan_info}{map_info}{instruct}"
-
-        system_prompt = f"The action direction should be one of {list(self.action_space.keys())}"
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-
-        response, token_cost = chatgpt_request(messages, temperature=0.8)
-        self.token_counts = self.token_counts + token_cost
-        if "```json" in response:
-            response = response.split('```')[1][4:]
-
-        print(messages, response)
-        try:
-            answer = json.loads(response)
-            self.action = self.extract_direction(answer['action'], list(self.action_space.keys()))
-            pass
-        except Exception as e:
-            print(e)
-            pass
 
         pass
 

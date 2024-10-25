@@ -6,13 +6,15 @@ import random
 from dataset.landmark import landmark
 from modules.LLM import *
 from modules.Dataset import Location
-from modules.long_term_memory import NetworkManager
+from modules.long_term_memory_plain import NetworkManager
 from global_function import angle2dir, ang2vec, vec2ang
 from global_function import get_realangle, angle_average
 from global_function import cal_angle2, cal_distance
 
 from dataset.bj_lm_recog import get_res_bj
 from dataset.sh_lm_recog import get_res_sh
+from dataset.pr_lm_recog import get_res_pr
+from dataset.ny_lm_recog import get_res_ny
 
 
 class Agent_InnerMonologue:
@@ -94,8 +96,16 @@ class Agent_InnerMonologue:
             lm_recog = get_res_bj()
             if self.location.id in lm_recog.keys():
                 lm_list = lm_recog[self.location.id]
-        else:
+        if "shanghai" in self.log_filepath:
             lm_recog = get_res_sh()
+            if self.location.id in lm_recog.keys():
+                lm_list = lm_recog[self.location.id]
+        if "paris" in self.log_filepath:
+            lm_recog = get_res_pr()
+            if self.location.id in lm_recog.keys():
+                lm_list = lm_recog[self.location.id]
+        if "newyork" in self.log_filepath:
+            lm_recog = get_res_ny()
             if self.location.id in lm_recog.keys():
                 lm_list = lm_recog[self.location.id]
 
@@ -131,7 +141,7 @@ class Agent_InnerMonologue:
                         if mode == "without_finetune":
                             predict_distance = int(response2.split(' meters')[0].split(' ')[-1])
                         else:
-                            predict_distance = int(response2.split('about ')[1].split(' ')[0])
+                            predict_distance = int(float(response2.split('about ')[1].split(' ')[0]))
                         print(predict_distance)
 
                         real_angle = cal_angle2(self.location.bdxy, lm['bdxy'])
@@ -256,26 +266,30 @@ class Agent_InnerMonologue:
             return f"North {a} steps, West {a} steps"
 
     def route_planning(self):
-        map_info = self.retrieved['connection_info']
-        trace_info = self.retrieved['trace_info']
-        current_info = self.retrieved['direction_info']
+        connection_info = self.retrieved['connection_info']
 
         plan_info = f"Planner:\n{self.plan}\n"
 
-        instruct = f"According to all information above, should the plan be updated?. If yes, show the new plan. According to your plan and current connection, choose one in {list(self.action_space.keys())} as your next action. Answer in the json format, and keys are ['Robot Thought', 'Successful Action', 'yes_or_no', 'new_plan'(if has), 'action'].\n"
+        instruct = f"According to all information above, should the plan be updated? If yes, show the new plan. According to your plan and current connection, choose one in {list(self.action_space.keys())} as your next action."
 
-        system_prompt = "You are a helpful navigation agent in the city. You should follow these instructions:\n(" \
-                        "1)You have two kinds of input: Scene and Planner. Scene describes what you have learnt now. " \
-                        "Planner shows your last plan.\n(2)Among your answer, 'Robot Thought' should describe which " \
-                        "direction you should go now to accomplish your plan. If you actually can go to the direction " \
-                        "you put forward in 'Robot Thought', 'Successful Action' should be 'True' and 'action' should " \
-                        "align with the direction you put forward in 'Robot Thought'. Else, 'Successful Action' " \
-                        "should be 'False' and you should show your 'new_plan' and reconsider your 'action'.\n "
+        system_prompt = "You are a helpful navigation agent in the city. And you should follow these instructions:\n(" \
+                        "1)Locations (including the goal) in the city are represented by coordinates. Take (0," \
+                        "0) as origin, (0,+1) as one step North, (+1,0) as one step East.\n(2)You have two kinds of input: Scene and Planner. Scene describes what you have learnt now. " \
+                        "Planner shows your last plan.\n(3)You should follow a step-by-step plan to " \
+                        "find your goal. Format Example of the plan when the goal is in the East and you are in a " \
+                        "South-North lane: 1. Move North until an intersection; 2. From that intersection, " \
+                        "move East if possible; 3. Move South to search the goal.\n(4)You should answer a series of " \
+                        "questions. Answer in the json format, and keys are ['Robot Thought', 'Successful Action', " \
+                        "'yes_or_no', 'new_plan'(if has), 'action'].\n(5)'Robot Thought' should describe which " \
+                        "direction you should go now to accomplish your plan. If you actually can go to the direction" \
+                        ", 'Successful Action' should be 'True' and 'action' should " \
+                        "align with the direction. Else, 'Successful Action' " \
+                        "should be 'False' and you should show your 'new_plan' and reconsider your 'action'.\n" + f"(6)Note that the 'action' must be one of {list(self.action_space.keys())}. Try not to move back unless necessary.\n(7)Even if you have arrived at your inferred goal coordinates, you haven't found the goal yet, so you should search among unvisited areas nearby."
 
-        if trace_info is None:
-            user_prompt = f"Scene:\n{current_info}{map_info}\n{plan_info}{instruct}"
+        if self.face_direction is not None:
+            user_prompt = f"Scene:\n{connection_info}Now you infer that the goal is in {self.dire_dis_transfer(self.face_direction, self.distance)}.\n{plan_info}{instruct}"
         else:
-            user_prompt = f"Scene:\n{current_info}{map_info}{trace_info}\n{plan_info}{instruct}"
+            user_prompt = f"Scene:\n{connection_info}\n{plan_info}{instruct}"
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -304,37 +318,6 @@ class Agent_InnerMonologue:
             self.action = self.extract_direction(answer['action'], list(self.action_space.keys()))
         except:
             self.action = None
-
-        pass
-
-    def decision_making(self):
-        map_info = self.retrieved['connection_info']
-        plan_info = f"The plan is {self.plan}. "
-
-        instruct = "According to the plan and current connection, decide the next action. Answer in the json format, and keys are ['thought', 'action']."
-
-        user_prompt = f"{plan_info}{map_info}{instruct}"
-
-        system_prompt = f"The action direction should be one of {list(self.action_space.keys())}"
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-
-        response, token_cost = chatgpt_request(messages, temperature=0.8)
-        self.token_counts = self.token_counts + token_cost
-        if "```json" in response:
-            response = response.split('```')[1][4:]
-
-        print(messages, response)
-        try:
-            answer = json.loads(response)
-            self.action = self.extract_direction(answer['action'], list(self.action_space.keys()))
-            pass
-        except Exception as e:
-            print(e)
-            pass
 
         pass
 

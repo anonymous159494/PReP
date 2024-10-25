@@ -13,6 +13,8 @@ from global_function import cal_angle2, cal_distance
 
 from dataset.bj_lm_recog import get_res_bj
 from dataset.sh_lm_recog import get_res_sh
+from dataset.pr_lm_recog import get_res_pr
+from dataset.ny_lm_recog import get_res_ny
 
 
 class Agent_PReP_NoPlanning:
@@ -94,8 +96,16 @@ class Agent_PReP_NoPlanning:
             lm_recog = get_res_bj()
             if self.location.id in lm_recog.keys():
                 lm_list = lm_recog[self.location.id]
-        else:
+        if "shanghai" in self.log_filepath:
             lm_recog = get_res_sh()
+            if self.location.id in lm_recog.keys():
+                lm_list = lm_recog[self.location.id]
+        if "paris" in self.log_filepath:
+            lm_recog = get_res_pr()
+            if self.location.id in lm_recog.keys():
+                lm_list = lm_recog[self.location.id]
+        if "newyork" in self.log_filepath:
+            lm_recog = get_res_ny()
             if self.location.id in lm_recog.keys():
                 lm_list = lm_recog[self.location.id]
 
@@ -123,7 +133,7 @@ class Agent_PReP_NoPlanning:
                         if mode == "without_finetune":
                             text2 = f"""The {lm['en']} is visible in the image and its voc bounding box is {voc}. How far is that place actually from the camera?"""
                         else:
-                            text2 = f"""The {lm['en']} is visible in the image and its voc bounding box is ({voc}). How far is that place actually from the camera? """
+                            text2 = f"""The {lm['en']} is visible in the image and its bounding box is ({voc}). How far is that place away from the camera?"""
                         response2 = llava_predict_local(img, text2, port=5000, path_only=True)
 
                         heading = self.location.connect[i][1]
@@ -131,7 +141,7 @@ class Agent_PReP_NoPlanning:
                         if mode == "without_finetune":
                             predict_distance = int(response2.split(' meters')[0].split(' ')[-1])
                         else:
-                            predict_distance = int(response2.split('about ')[1].split(' ')[0])
+                            predict_distance = int(float(response2.split('about ')[1].split(' ')[0]))
                         print(predict_distance)
 
                         real_angle = cal_angle2(self.location.bdxy, lm['bdxy'])
@@ -258,16 +268,21 @@ class Agent_PReP_NoPlanning:
     def anticipate_reflect(self):
         history_info = self.retrieved['direction_info']
 
-        # TODO: 需要方位推理模块额外输出一个当前到目标的距离，浮点数，传给以下这个变量
-        distance = self.distance
-
         if "You don't have any goal inference." in history_info and self.face_direction is None:
             return None
         if self.face_direction is not None:
-            user_prompt = f"{history_info} Now you infer that the goal is in {self.dire_dis_transfer(self.face_direction, distance)}. According to all your inferences, what are the goal coordinates most likely to be? What is the corresponding goal direction from current position?"
+            user_prompt = f"{history_info}Now you infer that the goal is in {self.dire_dis_transfer(self.face_direction, self.distance)}. According to all your inferences, what are the goal coordinates most likely to be? What is the corresponding goal direction from current position?"
         else:
-            user_prompt = f"{history_info} According to all your inferences, what are the goal coordinates most likely to be? What is the corresponding goal direction from current position?"
-        system_prompt = f"Take (0,0) as the reference, (0,+1) as the North, (+1,0) as the East. \nWhen one of your inference differs significantly from other inferences, you should not consider it when calculating the most likely goal coordinates. You should think step by step to answer each question. Answer in the json format and keys are ['Thought_Q1', 'Answer_Q1', 'Thought_Q2', 'Answer_Q2'].  Format Example of 'Answer_Q1': 'The goal coordinates are most likely to be (3, -2).' Format Example of 'Answer_Q2': 'The goal (3, -2) is in Southeast(more towards east) from current position (0, 0).'"
+            user_prompt = f"{history_info}According to all your inferences, what are the goal coordinates most likely to be? What is the corresponding goal direction from current position?"
+        system_prompt = f"You are a helpful navigation agent in the city. And you should follow these " \
+                        f"instructions:\n(1)You are evaluating goal coordinates. Take (0,0) as origin, (0," \
+                        f"+1) as one step North, (+1,0) as one step East.\n(2)You may have multiple inferences. When one of your " \
+                        f"inferences differs significantly from others, you should not take it into consideration.\n(" \
+                        f"3)You should think step by step to answer two questions. Answer in the json format and keys " \
+                        f"are ['Thought_Q1', 'Answer_Q1', 'Thought_Q2', 'Answer_Q2'].\n(4)Format Example of " \
+                        f"'Answer_Q1': 'The goal coordinates are most likely to be (3,-2).' Format Example of " \
+                        f"'Answer_Q2': 'The goal (3,-2) is in Southeast(more towards east) from current position (0," \
+                        f"0).' "
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -282,7 +297,9 @@ class Agent_PReP_NoPlanning:
         if self.log_filepath is not None:
             write_gpt_data(messages, response, output_path=self.log_filepath, model_name='gpt')
 
-        print(user_prompt, response)
+        if self.to_print:
+            print("\n(function) anticipate_reflection:")
+            print(user_prompt, "\n", response)
         answer = json.loads(response)
 
         output = answer['Answer_Q1'] + answer['Answer_Q2']
@@ -290,23 +307,25 @@ class Agent_PReP_NoPlanning:
         return output
 
     def route_planning(self):
-        map_info = self.retrieved['connection_info']
+        connection_info = self.retrieved['connection_info']
         trace_info = self.retrieved['trace_info']
 
         ant_ref = self.anticipate_reflect()
         if ant_ref is None:
-            current_info = f"You don't have any goal inference and should explore and gather more information. "
+            direction_info = f"You don't have any goal inference and should explore and gather more information. "
         else:
-            current_info = ant_ref
+            direction_info = ant_ref
 
-        instruct = f"According to all information above and current connection, choose one in {list(self.action_space.keys())} as your next action. Answer in the json format, and keys are ['action_reason', 'action']. "
+        instruct = f"According to all information above, choose one in {list(self.action_space.keys())} as your next action."
 
-        system_prompt = "You are a helpful navigate agent in the city. And you should follow these instructions: \n" + f"(1) Note that the action must be one of the {list(self.action_space.keys())}. Try not to move back unless necessary.\n(2)If your trajectory memory indicates you are wandering between two directions, you should move along a certain direction to break the loop.\n(3)Even if you have arrived at your inferred goal coordinates, you haven't found the goal yet, so you should search among unvisited areas nearby."
+        system_prompt = "You are a helpful navigation agent in the city. And you should follow these instructions:\n(" \
+                        "1)Locations (including the goal) in the city are represented by coordinates. Take (0," \
+                        "0) as origin, (0,+1) as one step North, (+1,0) as one step East.\n" + f"(2)You should think step by step to determine your next action. Answer in the json format, and keys are ['action_reason', 'action']. Note that the 'action' must be one of {list(self.action_space.keys())}. Try not to move back unless necessary.\n(3)If your trajectory memory indicates you are wandering between two directions, you should move along a certain direction to break the loop.\n(4)Even if you have arrived at your inferred goal coordinates, you haven't found the goal yet, so you should search among unvisited areas nearby."
 
         if trace_info is None:
-            user_prompt = f"{current_info}{map_info}{instruct}"
+            user_prompt = f"{connection_info}{direction_info}{instruct}"
         else:
-            user_prompt = f"{current_info}{map_info}{trace_info}{instruct}"
+            user_prompt = f"{connection_info}{direction_info}{trace_info}{instruct}"
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -321,7 +340,9 @@ class Agent_PReP_NoPlanning:
         if self.log_filepath is not None:
             write_gpt_data(messages, response, output_path=self.log_filepath, model_name='gpt')
 
-        print(user_prompt, response)
+        if self.to_print:
+            print("\n(function) Planning & Action")
+            print(user_prompt, "\n", response)
 
         try:
             answer = json.loads(response)
@@ -335,37 +356,6 @@ class Agent_PReP_NoPlanning:
             self.action = self.extract_direction(answer['action'], list(self.action_space.keys()))
         except:
             self.action = None
-
-        pass
-
-    def decision_making(self):
-        map_info = self.retrieved['connection_info']
-        plan_info = f"The plan is {self.plan}. "
-
-        instruct = "According to the plan and current connection, decide the next action. Answer in the json format, and keys are ['thought', 'action']."
-
-        user_prompt = f"{plan_info}{map_info}{instruct}"
-
-        system_prompt = f"The action direction should be one of {list(self.action_space.keys())}"
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-
-        response, token_cost = chatgpt_request(messages, temperature=0.8)
-        self.token_counts = self.token_counts + token_cost
-        if "```json" in response:
-            response = response.split('```')[1][4:]
-
-        print(messages, response)
-        try:
-            answer = json.loads(response)
-            self.action = self.extract_direction(answer['action'], list(self.action_space.keys()))
-            pass
-        except Exception as e:
-            print(e)
-            pass
 
         pass
 

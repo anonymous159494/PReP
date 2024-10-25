@@ -17,7 +17,7 @@ from dataset.pr_lm_recog import get_res_pr
 from dataset.ny_lm_recog import get_res_ny
 
 
-class Agent_PReP_Plain:
+class Agent_DEPS:
     def __init__(
             self,
             loc_dict: dict[Location],  # environment
@@ -28,7 +28,7 @@ class Agent_PReP_Plain:
             ablation_mode: str = "normal"  # for ablation
     ):
 
-        # location 
+        # location
         self.map = loc_dict
         self.location = loc_dict[sta]
         self.destination = loc_dict[des]
@@ -191,7 +191,6 @@ class Agent_PReP_Plain:
             lm = landmark[lm_id]
             lm_ang_from_cur = self.observation[lm_id]['angle']
             lm_dis_from_cur = self.observation[lm_id]['distance']
-            
 
             vec1 = ang2vec(lm_ang_from_cur, lm_dis_from_cur)  # cur -> landmarkA
             for lm in self.destination.landmark.keys():
@@ -199,7 +198,7 @@ class Agent_PReP_Plain:
                 lm_dis_from_tar = self.destination.landmark[lm]['distance']
                 vec2 = ang2vec(lm_ang_from_tar, lm_dis_from_tar)  # goal -> landmarkB
 
-                vec3 = [ j-i for i, j in zip(landmark[lm_id]['bdxy'], landmark[lm]['bdxy'])]  # landmarkA -> landmarkB
+                vec3 = [j - i for i, j in zip(landmark[lm_id]['bdxy'], landmark[lm]['bdxy'])]  # landmarkA -> landmarkB
 
                 vec = [vec1[0] - vec2[0] + vec3[0], vec1[1] - vec2[1] + vec3[1]]
 
@@ -269,16 +268,32 @@ class Agent_PReP_Plain:
     def route_planning(self):
         connection_info = self.retrieved['connection_info']
 
-        instruct = f"According to all information above, choose one in {list(self.action_space.keys())} as your next action."
+        plan_info = f"\nPlanner:{self.plan}\n"
+
+        instruct = f"According to all information above, should the plan be updated? If yes, show the new plan. According to your plan and current connection, choose one in {list(self.action_space.keys())} as your next action."
 
         system_prompt = "You are a helpful navigation agent in the city. And you should follow these instructions:\n(" \
                         "1)Locations (including the goal) in the city are represented by coordinates. Take (0," \
-                        "0) as origin, (0,+1) as one step North, (+1,0) as one step East.\n" + f"(2)When determining your next action, answer in the json format, and keys are ['action_reason', 'action']. Note that the 'action' must be one of {list(self.action_space.keys())}. Try not to move back unless necessary.\n(3)Even if you have arrived at your inferred goal coordinates, you haven't found the goal yet, so you should search among unvisited areas nearby."
+                        "0) as origin, (0,+1) as one step North, (+1,0) as one step East.\n" \
+                        "(2)'Planner' provides you with a step-by-step plan which you should follow to " \
+                        "find your goal. Format Example of the plan when the goal is in the East and you are in a " \
+                        "South-North lane: 1. Move North until an intersection; 2. From that intersection, " \
+                        "move East if possible; 3. Move South to search the goal.\n(3)You should answer a series of " \
+                        "questions. Answer in the json format, and keys are ['Descriptor', 'Explainer', " \
+                        "'yes_or_no', 'new_plan'(if has), 'action'].\n(4)'Descriptor' should describe the current " \
+                        "plan execution process. Clearly identify which steps of the plan were " \
+                        "successful and which were not. Format Example of 'Descriptor': I succeed on step 1. I failed" \
+                        " on step 2 'From that intersection, move East if possible'. I'm now at that intersection.\n(5)If 'Descriptor' contains " \
+                        "a description of the failure of the plan, 'Explainer' should identify the reason why " \
+                        "the plan cannot be executed successfully and explain what should be done to fix these errors. " \
+                        "Then, you should generate a revised new plan. Format Example of 'Explainer': It's because I " \
+                        "can't move East at current intersection. The goal is probably in East and I can move Northeast" \
+                        " now. So I should move Northeast.\n" + f"(6)Note that the 'action' must be one of {list(self.action_space.keys())}. Try not to move back unless necessary.\n(7)Even if you have arrived at your inferred goal coordinates, you haven't found the goal yet, so you should search among unvisited areas nearby."
 
         if self.face_direction is not None:
-            user_prompt = f"{connection_info}Now you infer that the goal is in {self.dire_dis_transfer(self.face_direction, self.distance)}. {instruct}"
+            user_prompt = f"{connection_info}Now you infer that the goal is in {self.dire_dis_transfer(self.face_direction, self.distance)}. {plan_info}{instruct}"
         else:
-            user_prompt = f"{connection_info}{instruct}"
+            user_prompt = f"{connection_info}{plan_info}{instruct}"
 
         messages = [
             {"role": "system", "content": system_prompt},
