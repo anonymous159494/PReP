@@ -16,10 +16,11 @@ from agents.agent_CaP import Agent_Cap
 from agents.agent_CoT import Agent_CoT
 from agents.agent_ProgPrompt import Agent_ProgPrompt
 from agents.agent_InnerMonologue import Agent_InnerMonologue
+from agents.agent_DEPS import Agent_DEPS
 
 agent_list = [Agent_PReP,   # Agent Full 
             Agent_PReP_NoReflection, Agent_PReP_NoPlanning, Agent_PReP_Plain,   # Agent Ablation
-            Agent_CoT, Agent_Cap, Agent_ProgPrompt, Agent_InnerMonologue,       # Agent Varicant
+            Agent_CoT, Agent_Cap, Agent_ProgPrompt, Agent_InnerMonologue, Agent_DEPS,       # Agent Varicant
             Agent_PReP_Oracle, Agent_PReP    # Agent Perception Ablation
         ]
 
@@ -89,7 +90,7 @@ def agent_test(city, llm_model, test_label, mode=0):
     # load dataset and testset
     dataset_cache = f"dataset/{city}/env_{city}.pkl"    # dataset
     svcache_path = f"dataset/{city}/svdat/"             # street views
-    testset_path = f"testset/{city}_testset_new.json"
+    testset_path = f"testset/{city}_testset_1.json"
 
     env_dict = load_dataset(dataset_cache)     
     with open(testset_path, "r") as f:
@@ -103,15 +104,15 @@ def agent_test(city, llm_model, test_label, mode=0):
     else:
         configure_openai(model=llm_model['name'], is_openai=False, ip_port=llm_model['api_base'])
 
-    if mode == 9:
+    if mode == 10:
         ablation_mode = "without_finetune"
-        configure_llava("dataset/llava_response_local/llava_respnese_local_bf.json")
+        configure_llava("dataset/llava_response_local/llava_response_local_bf.json")
     else:
         ablation_mode = "normal"
         configure_llava("dataset/llava_response_local/llava_respnese_local.json")
 
     # metric file init
-    metric_file = f"metric_files/metric_test_{llm_model['name']}_{city}_{test_label}.csv"
+    metric_file = f"metric_files/metric_test_{llm_model['name']}_{city}_{test_label}_1.csv"
     metrics = Metrics(metric_file)
 
     # agent init

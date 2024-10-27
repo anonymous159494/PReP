@@ -110,11 +110,11 @@ class NetworkManager:
         if len(self.goal_coord_list) == 0:
             direction_info += f"You don't have any goal inference."
         if len(self.goal_coord_list) == 1:
-            direction_info += f"Last time you inferred the goal was at {self.goal_coord_list[0]}."
+            direction_info += f"Last time you inferred the goal was at {self.goal_coord_list[0]}. "
         if len(self.goal_coord_list) == 2:
-            direction_info += f"The first time you inferred the goal was at {self.goal_coord_list[0]}. The second time you inferred the goal was at {self.goal_coord_list[1]}."
+            direction_info += f"The first time you inferred the goal was at {self.goal_coord_list[0]}. The second time you inferred the goal was at {self.goal_coord_list[1]}. "
         if len(self.goal_coord_list) == 3:
-            direction_info += f"The first time you inferred the goal was at {self.goal_coord_list[0]}. The second time you inferred the goal was at {self.goal_coord_list[1]}. The third time you inferred the goal was at {self.goal_coord_list[2]}."
+            direction_info += f"The first time you inferred the goal was at {self.goal_coord_list[0]}. The second time you inferred the goal was at {self.goal_coord_list[1]}. The third time you inferred the goal was at {self.goal_coord_list[2]}. "
 
         if len(self.trajectory_list) >= 5:
             trace_info = self.llm_interface(self.trajectory_list)
@@ -129,24 +129,30 @@ class NetworkManager:
         act = self.trajectory_list[index].action
         n_coord = self.trajectory_list[index].next_coord
 
-        description = f"You were at {coord}. You could move to {connect} from here. You chose to move to {act}. You then arrived at {n_coord}.\n"
+        description = f"You were at {coord}. You could move to {connect} from there. You chose to move to {act}. You then arrived at {n_coord}.\n"
 
         return description
 
     def llm_interface(self, memory_list):
 
-        description = "You are conducting a navigation task and here is your memory list in time sequence.\n"
+        description = "Here is your memory list in time sequence.\n"
         for i in range(len(memory_list)):
             description += f"{i + 1}. "
             description += self.timestamp_generation(i)
 
-        description += "Summarize all your memory, what can you learn from it? Answer in no more than 2 sentence."
+        description += "Summarize all your memory, what can you learn from it?"
 
         print("\n(function) memory_summary:")
 
         print(description)
 
-        system_prompt = "Format Example of Answer: 'In the past 15 steps, you initially wandered between East and West. You then headed East and then North to reach your current position. Now you are on a north-south road. If you keep going South, you will reach an intersection (1, -5) which can move to North, West and East. If you keep going North, you will reach a dead end (1, 5) with only one navigable direction.'"
+        system_prompt = "You are a helpful navigation agent in the city. And you should follow these instructions:\n(" \
+                        "1)You should think step by step to summarize your memory. Format Example of Answer: 'In the past " \
+                        "10 steps, you initially wandered between East and West. You then headed East and then North " \
+                        "to reach your current position. Now you are on a north-south road. If you keep going South, " \
+                        "you will reach an intersection (1,-5) which can move to North, West and East. If you keep " \
+                        "going North, you will reach a dead end (1,5) with only one navigable direction.'\n(2)Answer " \
+                        "should be as concise as possible while still containing all the important information. "
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": description}

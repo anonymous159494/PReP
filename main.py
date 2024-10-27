@@ -9,19 +9,20 @@ tset_mode =[
     "Cap",              # 5, Cap Agent
     "Progprompt",       # 6, Progprompt Agent
     "InnerMonologue",   # 7, InnerMonologue Agent
-    "Oracle",           # 8, PReP Agent with Oracle Perception
-    "WithoutFinetune",  # 9, PReP Agent with un-finetuned Percetion
+    "DEPS",             # 8, DEPS Agent
+    "Oracle",           # 9, PReP Agent with Oracle Perception
+    "WithoutFinetune",  # 10, PReP Agent with un-finetuned Percetion
 ]
 
 
 if __name__ == "__main__":
 
     llm_model = {
-        'name': "gpt-3.5-turbo",
+        'name': "gpt-4o-mini",
         'api_base': None
     }
 
-    city = "shanghai"
+    city = "newyork"
 
     mode = 0
 
