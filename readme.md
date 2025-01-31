@@ -48,3 +48,4 @@ To summarize, our contributions are as follows:
 
 ![further results](images/further_results.png)
 
+![benchmark results](images/benchmark.png)
