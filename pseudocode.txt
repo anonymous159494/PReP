@@ -1,0 +1,23 @@
+Algorithm: Goal-Oriented Navigation
+
+Input: Goal description G
+Initialize agent at loc_0
+
+while not success(G) and not reach_limit():
+    # Perception Part
+    sv ← perceive(loc)
+    R_lm ← landmark_recognition(sv)
+    if R_lm ≠ None then
+        R_g ← direction_inference(R_lm)
+    
+    # Reflection Part
+    history_goal_info, history_traj_info ← memory_retrieve()
+    R_m ← anticipate(history_goal_info, loc)  # Anticipate based on memory
+    R_l ← reevaluate(R_g, R_m)
+    M_t ← history_traj_info
+    
+    # Planning Part
+    P ← plan(P_old, R_l, M_t)
+    a ← decision_reasoning(P, M_t, E_t)  # E_t represents current connectivity
+    memory_update(agent, P, a)
+    loc ← action(agent, a)
